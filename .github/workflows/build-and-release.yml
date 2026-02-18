@@ -15,6 +15,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Set plugin minor version to run number
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          MAJOR=$(grep -E '^version:' copilot-plugin.yml | sed -E 's/[^0-9]*([0-9]+)\..*/\1/')
+          NEW_VERSION="${MAJOR}.${RUN_NUMBER}.0"
+          echo "Setting copilot-plugin.yml version to $NEW_VERSION"
+          sed -E -i "s/(version:[[:space:]]*")[0-9]+\.[0-9]+\.[0-9]+(")/\1${NEW_VERSION}\2/" copilot-plugin.yml
+          cat copilot-plugin.yml
       - name: Build package
         run: bash ./scripts/build.sh
       - name: Upload package
