@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      plugin_version: ${{ steps.get_version.outputs.plugin_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,6 +26,11 @@ jobs:
           echo "Setting copilot-plugin.yml version to $NEW_VERSION"
           sed -E -i "s/^([[:space:]]*version:[[:space:]]*)\"?[0-9]+\.[0-9]+\.[0-9]+\"?/\1\"${NEW_VERSION}\"/" copilot-plugin.yml
           cat copilot-plugin.yml
+      - name: Extract plugin version
+        id: get_version
+        run: |
+          VERSION=$(grep -E -o '[0-9]+\.[0-9]+\.[0-9]+' copilot-plugin.yml | head -n1)
+          echo "plugin_version=$VERSION" >> $GITHUB_OUTPUT
       - name: Build package
         run: bash ./scripts/build.sh
       - name: Upload package
@@ -49,21 +56,31 @@ jobs:
       - name: Get artifact file name
         run: |
           echo "ARTIFACT=$(ls plugin-*.zip | head -n1)" >> $GITHUB_ENV
-      - name: Create GitHub Release
+      - name: Create or find GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          PLUGIN_VERSION: ${{ needs.build.outputs.plugin_version }}
+          TAG_NAME: v${{ needs.build.outputs.plugin_version }}
           REPO: ${{ github.repository }}
         run: |
-          echo "Creating release for: $TAG_NAME"
-          payload=$(printf '{"tag_name":"%s","name":"Release %s","draft":false}' "$TAG_NAME" "$TAG_NAME")
-          response=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" -d "$payload" "https://api.github.com/repos/$REPO/releases")
-          release_id=$(echo "$response" | jq -r '.id')
-          if [ "$release_id" = "null" ] || [ -z "$release_id" ]; then
-            echo "Failed to create release: $response"
-            exit 1
+          echo "Using plugin version: $PLUGIN_VERSION"
+          echo "Using tag name: $TAG_NAME"
+          # Check for existing release with this tag
+          response=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/$REPO/releases/tags/$TAG_NAME")
+          release_id=$(echo "$response" | jq -r '.id // empty')
+          if [ -n "$release_id" ]; then
+            echo "Found existing release id: $release_id"
+            echo "RELEASE_ID=$release_id" >> $GITHUB_ENV
+          else
+            payload=$(printf '{"tag_name":"%s","name":"Release %s","draft":false}' "$TAG_NAME" "$TAG_NAME")
+            response=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" -d "$payload" "https://api.github.com/repos/$REPO/releases")
+            release_id=$(echo "$response" | jq -r '.id')
+            if [ -z "$release_id" ] || [ "$release_id" = "null" ]; then
+              echo "Failed to create release: $response"
+              exit 1
+            fi
+            echo "RELEASE_ID=$release_id" >> $GITHUB_ENV
           fi
-          echo "RELEASE_ID=$release_id" >> $GITHUB_ENV
       - name: Upload Release Asset
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
