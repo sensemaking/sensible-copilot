@@ -1,0 +1,60 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build package
+        run: bash ./scripts/build.sh
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-package
+          path: plugin-*.zip
+      - name: Validate manifest fields
+        run: |
+          grep -E '^name:' copilot-plugin.yml
+          grep -E '^id:' copilot-plugin.yml
+          grep -E '^version:' copilot-plugin.yml
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-package
+      - name: Get artifact file name
+        run: |
+          echo "ARTIFACT=$(ls plugin-*.zip | head -n1)" >> $GITHUB_ENV
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ env.ARTIFACT }}
+          asset_name: ${{ env.ARTIFACT }}
+          asset_content_type: application/zip

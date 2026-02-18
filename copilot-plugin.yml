@@ -1,0 +1,8 @@
+name: "Company Copilot Plugin"
+id: "com.example.copilot.company"
+version: "0.1.0"
+description: "Scaffold for company-wide Copilot CLI plugin containing agents, skills, MCPs, and custom instructions."
+entrypoints: []
+authors:
+  - "Your Company"
+license: "MIT"
